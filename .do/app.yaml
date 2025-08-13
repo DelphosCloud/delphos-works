@@ -1,0 +1,25 @@
+name: document-generator
+functions:
+- name: generate-document
+  source_dir: functions/generate-document
+  github:
+    repo: your-username/document-generator
+    branch: main
+  routes:
+  - path: /api/generate
+  environment_slug: python
+  
+- name: download-file
+  source_dir: functions/download-file
+  github:
+    repo: your-username/document-generator
+    branch: main
+  routes:
+  - path: /api/download
+  environment_slug: python
+
+envs:
+- key: SPACES_ENDPOINT
+  value: CHANGE_THIS_TO_YOUR_REGION.digitaloceanspaces.com
+- key: SPACES_BUCKET
+  value: CHANGE_THIS_TO_YOUR_BUCKET_NAME
