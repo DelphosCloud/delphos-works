@@ -1,22 +1,16 @@
 name: delphos-works
-functions:
-- name: generate-document
-  source_dir: functions/generate-document
+services:
+- name: api
+  source_dir: /
   github:
     repo: DelphosCloud/delphos-works
     branch: main
-  routes:
-  - path: /api/generate
+  run_command: python app.py
   environment_slug: python
-  
-- name: download-file
-  source_dir: functions/download-file
-  github:
-    repo: DelphosCloud/delphos-works
-    branch: main
+  instance_count: 1
+  instance_size_slug: basic-xxs
   routes:
-  - path: /api/download
-  environment_slug: python
+  - path: /
 
 envs:
 - key: SPACES_ENDPOINT
