@@ -3,7 +3,7 @@ functions:
 - name: generate-document
   source_dir: functions/generate-document
   github:
-    repo: delphoscloud/delphos-works
+    repo: DelphosCloud/delphos-works
     branch: main
   routes:
   - path: /api/generate
@@ -12,7 +12,7 @@ functions:
 - name: download-file
   source_dir: functions/download-file
   github:
-    repo: delphoscloud/delphos-works
+    repo: DelphosCloud/delphos-works
     branch: main
   routes:
   - path: /api/download
