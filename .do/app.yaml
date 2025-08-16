@@ -11,8 +11,3 @@ services:
   instance_size_slug: basic-xxs
   routes:
   - path: /
-  envs:
-  - key: SPACES_ENDPOINT
-    value: lon1.digitaloceanspaces.com
-  - key: SPACES_BUCKET
-    value: delphos-works
