@@ -230,9 +230,6 @@ def health_check():
     """Basic health check endpoint"""
     return jsonify({"status": "healthy", "service": "delphos-works document generator"})
 
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=8080)
-
 @app.route('/debug/env', methods=['GET'])
 def debug_env():
     """Debug endpoint to check environment variables"""
@@ -242,3 +239,6 @@ def debug_env():
         "SPACES_KEY": os.environ.get('SPACES_KEY', 'NOT_SET')[:10] + "..." if os.environ.get('SPACES_KEY') else 'NOT_SET',
         "SPACES_SECRET": "SET" if os.environ.get('SPACES_SECRET') else 'NOT_SET'
     })
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=8080)
