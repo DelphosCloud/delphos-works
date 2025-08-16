@@ -232,3 +232,13 @@ def health_check():
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8080)
+
+@app.route('/debug/env', methods=['GET'])
+def debug_env():
+    """Debug endpoint to check environment variables"""
+    return jsonify({
+        "SPACES_ENDPOINT": os.environ.get('SPACES_ENDPOINT', 'NOT_SET'),
+        "SPACES_BUCKET": os.environ.get('SPACES_BUCKET', 'NOT_SET'),
+        "SPACES_KEY": os.environ.get('SPACES_KEY', 'NOT_SET')[:10] + "..." if os.environ.get('SPACES_KEY') else 'NOT_SET',
+        "SPACES_SECRET": "SET" if os.environ.get('SPACES_SECRET') else 'NOT_SET'
+    })
