@@ -225,20 +225,131 @@ def process_tables(doc, data):
                 if j < len(new_row.cells):
                     new_row.cells[j].text = cell_text
 
+@app.route('/api/upload-template', methods=['POST'])
+def upload_template():
+    """
+    Upload a document template to Spaces storage
+    """
+    try:
+        # Check if file is present in the request
+        if 'file' not in request.files:
+            return jsonify({
+                "Title": "Error",
+                "Message": "No file provided"
+            }), 400
+        
+        file = request.files['file']
+        
+        # Check if file is selected
+        if file.filename == '':
+            return jsonify({
+                "Title": "Error",
+                "Message": "No file selected"
+            }), 400
+        
+        # Check file type (should be .docx)
+        if not file.filename.lower().endswith('.docx'):
+            return jsonify({
+                "Title": "Error",
+                "Message": "Only .docx files are allowed"
+            }), 400
+        
+        # Generate unique template ID (GUID)
+        template_id = str(uuid.uuid4())
+        template_filename = f"{template_id}.docx"
+        
+        # Initialize Spaces client
+        spaces_client = boto3.client(
+            's3',
+            endpoint_url=f"https://{os.environ['SPACES_ENDPOINT']}",
+            aws_access_key_id=os.environ['SPACES_KEY'],
+            aws_secret_access_key=os.environ['SPACES_SECRET']
+        )
+        
+        bucket_name = os.environ['SPACES_BUCKET']
+        
+        # Upload file to Spaces
+        template_key = f"templates/{template_filename}"
+        spaces_client.put_object(
+            Bucket=bucket_name,
+            Key=template_key,
+            Body=file.read(),
+            ContentType='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        )
+        
+        # Optional: Get template name from form data
+        template_name = request.form.get('name', file.filename)
+        
+        return jsonify({
+            "templateId": template_id,
+            "templateFilename": template_filename,
+            "originalName": file.filename,
+            "templateName": template_name,
+            "uploadedAt": datetime.now().isoformat(),
+            "message": "Template uploaded successfully"
+        }), 200
+        
+    except Exception as e:
+        return jsonify({
+            "Title": "Error",
+            "Message": f"Upload failed: {str(e)}"
+        }), 500
+
+@app.route('/api/list-templates', methods=['GET'])
+def list_templates():
+    """
+    List all available templates in storage
+    """
+    try:
+        # Initialize Spaces client
+        spaces_client = boto3.client(
+            's3',
+            endpoint_url=f"https://{os.environ['SPACES_ENDPOINT']}",
+            aws_access_key_id=os.environ['SPACES_KEY'],
+            aws_secret_access_key=os.environ['SPACES_SECRET']
+        )
+        
+        bucket_name = os.environ['SPACES_BUCKET']
+        
+        # List objects in templates folder
+        response = spaces_client.list_objects_v2(
+            Bucket=bucket_name,
+            Prefix='templates/'
+        )
+        
+        templates = []
+        if 'Contents' in response:
+            for obj in response['Contents']:
+                # Skip the folder itself
+                if obj['Key'] == 'templates/':
+                    continue
+                
+                # Extract filename without path
+                filename = obj['Key'].replace('templates/', '')
+                template_id = filename.replace('.docx', '')
+                
+                templates.append({
+                    "templateId": template_id,
+                    "filename": filename,
+                    "size": obj['Size'],
+                    "lastModified": obj['LastModified'].isoformat(),
+                })
+        
+        return jsonify({
+            "templates": templates,
+            "count": len(templates)
+        }), 200
+        
+    except Exception as e:
+        return jsonify({
+            "Title": "Error",
+            "Message": f"Failed to list templates: {str(e)}"
+        }), 500
+
 @app.route('/', methods=['GET'])
 def health_check():
     """Basic health check endpoint"""
     return jsonify({"status": "healthy", "service": "delphos-works document generator"})
-
-@app.route('/debug/env', methods=['GET'])
-def debug_env():
-    """Debug endpoint to check environment variables"""
-    return jsonify({
-        "SPACES_ENDPOINT": os.environ.get('SPACES_ENDPOINT', 'NOT_SET'),
-        "SPACES_BUCKET": os.environ.get('SPACES_BUCKET', 'NOT_SET'),
-        "SPACES_KEY": os.environ.get('SPACES_KEY', 'NOT_SET')[:10] + "..." if os.environ.get('SPACES_KEY') else 'NOT_SET',
-        "SPACES_SECRET": "SET" if os.environ.get('SPACES_SECRET') else 'NOT_SET'
-    })
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8080)
