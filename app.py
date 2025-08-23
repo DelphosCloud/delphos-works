@@ -9,10 +9,40 @@ import io
 import tempfile
 from botocore.exceptions import ClientError
 import base64
+from functools import wraps
 
 app = Flask(__name__)
 
+def require_api_key(f):
+    """Decorator to require API key authentication"""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        api_key = request.headers.get('X-API-Key')
+        expected_key = os.environ.get('API_KEY')
+        
+        if not expected_key:
+            return jsonify({
+                "Title": "Error",
+                "Message": "API key not configured on server"
+            }), 500
+        
+        if not api_key:
+            return jsonify({
+                "Title": "Error",
+                "Message": "API key required in X-API-Key header"
+            }), 401
+        
+        if api_key != expected_key:
+            return jsonify({
+                "Title": "Error",
+                "Message": "Invalid API key"
+            }), 401
+        
+        return f(*args, **kwargs)
+    return decorated_function
+
 @app.route('/api/generate', methods=['POST'])
+@require_api_key
 def generate_document():
     """
     Generate document from template and JSON data
@@ -47,7 +77,7 @@ def generate_document():
         
         # Download template from Spaces
         try:
-            template_key = f"templates/{template_id}"
+            template_key = f"templates/{template_id}.docx"
             template_response = spaces_client.get_object(Bucket=bucket_name, Key=template_key)
             template_content = template_response['Body'].read()
         except Exception as e:
@@ -103,6 +133,7 @@ def generate_document():
         }), 500
 
 @app.route('/api/download', methods=['GET'])
+@require_api_key
 def download_file():
     """
     Download generated files
@@ -165,67 +196,8 @@ def download_file():
             "Message": f"Internal server error: {str(e)}"
         }), 500
 
-def replace_placeholders_in_text(paragraph, data):
-    """Replace placeholders in paragraph text"""
-    full_text = paragraph.text
-    
-    # Replace simple placeholders
-    for key, value in data.items():
-        if key != 'deliverables' and isinstance(value, (str, int, float)):
-            placeholder = f"{{{{{key}}}}}"
-            full_text = full_text.replace(placeholder, str(value))
-    
-    # Clear and rebuild paragraph with replaced text
-    if full_text != paragraph.text:
-        paragraph.clear()
-        paragraph.add_run(full_text)
-
-def process_tables(doc, data):
-    """Process tables and handle deliverables repetition"""
-    deliverables = data.get('deliverables', [])
-    
-    for table in doc.tables:
-        rows_to_remove = []
-        rows_to_add = []
-        
-        for i, row in enumerate(table.rows):
-            row_text = ' '.join(cell.text for cell in row.cells)
-            
-            # Check if this row contains the repeat marker
-            if '{{!REPEATROW}}' in row_text:
-                # Store the template row
-                template_row = row
-                rows_to_remove.append(i)
-                
-                # Create new rows for each deliverable
-                for deliverable in deliverables:
-                    new_row_data = []
-                    for cell in template_row.cells:
-                        cell_text = cell.text
-                        # Remove the repeat marker
-                        cell_text = cell_text.replace('{{!REPEATROW}}', '')
-                        
-                        # Replace deliverable placeholders
-                        for key, value in deliverable.items():
-                            placeholder = f"{{{{{key}}}}}"
-                            cell_text = cell_text.replace(placeholder, str(value))
-                        
-                        new_row_data.append(cell_text)
-                    
-                    rows_to_add.append((i, new_row_data))
-        
-        # Remove template rows (in reverse order to maintain indices)
-        for row_index in reversed(rows_to_remove):
-            table._element.remove(table.rows[row_index]._element)
-        
-        # Add new rows
-        for original_index, row_data in rows_to_add:
-            new_row = table.add_row()
-            for j, cell_text in enumerate(row_data):
-                if j < len(new_row.cells):
-                    new_row.cells[j].text = cell_text
-
 @app.route('/api/upload-template', methods=['POST'])
+@require_api_key
 def upload_template():
     """
     Upload a document template to Spaces storage
@@ -296,6 +268,7 @@ def upload_template():
         }), 500
 
 @app.route('/api/list-templates', methods=['GET'])
+@require_api_key
 def list_templates():
     """
     List all available templates in storage
@@ -346,10 +319,92 @@ def list_templates():
             "Message": f"Failed to list templates: {str(e)}"
         }), 500
 
+@app.route('/debug/env', methods=['GET'])
+@require_api_key
+def debug_env():
+    """Debug endpoint to check environment variables"""
+    return jsonify({
+        "SPACES_ENDPOINT": os.environ.get('SPACES_ENDPOINT', 'NOT_SET'),
+        "SPACES_BUCKET": os.environ.get('SPACES_BUCKET', 'NOT_SET'),
+        "SPACES_KEY": os.environ.get('SPACES_KEY', 'NOT_SET')[:10] + "..." if os.environ.get('SPACES_KEY') else 'NOT_SET',
+        "SPACES_SECRET": "SET" if os.environ.get('SPACES_SECRET') else 'NOT_SET',
+        "API_KEY": "SET" if os.environ.get('API_KEY') else 'NOT_SET'
+    })
+
+def replace_placeholders_in_text(paragraph, data):
+    """Replace placeholders in paragraph text"""
+    full_text = paragraph.text
+    
+    # Replace simple placeholders
+    for key, value in data.items():
+        if key != 'deliverables' and isinstance(value, (str, int, float)):
+            placeholder = f"{{{{{key}}}}}"
+            full_text = full_text.replace(placeholder, str(value))
+    
+    # Clear and rebuild paragraph with replaced text
+    if full_text != paragraph.text:
+        paragraph.clear()
+        paragraph.add_run(full_text)
+
+def process_tables(doc, data):
+    """Process tables and handle deliverables repetition"""
+    deliverables = data.get('deliverables', [])
+    
+    for table in doc.tables:
+        rows_to_remove = []
+        rows_to_add = []
+        
+        for i, row in enumerate(table.rows):
+            row_text = ' '.join(cell.text for cell in row.cells)
+            
+            # Check if this row contains the repeat marker
+            if '{{!REPEATROW}}' in row_text:
+                # Store the template row
+                template_row = row
+                rows_to_remove.append(i)
+                
+                # Create new rows for each deliverable
+                for deliverable in deliverables:
+                    new_row_data = []
+                    for cell in template_row.cells:
+                        cell_text = cell.text
+                        # Remove the repeat marker
+                        cell_text = cell_text.replace('{{!REPEATROW}}', '')
+                        
+                        # Replace deliverable placeholders
+                        for key, value in deliverable.items():
+                            placeholder = f"{{{{{key}}}}}"
+                            cell_text = cell_text.replace(placeholder, str(value))
+                        
+                        new_row_data.append(cell_text)
+                    
+                    rows_to_add.append((i, new_row_data))
+        
+        # Remove template rows (in reverse order to maintain indices)
+        for row_index in reversed(rows_to_remove):
+            table._element.remove(table.rows[row_index]._element)
+        
+        # Add new rows
+        for original_index, row_data in rows_to_add:
+            new_row = table.add_row()
+            for j, cell_text in enumerate(row_data):
+                if j < len(new_row.cells):
+                    new_row.cells[j].text = cell_text
+
 @app.route('/', methods=['GET'])
 def health_check():
-    """Basic health check endpoint"""
-    return jsonify({"status": "healthy", "service": "delphos-works document generator"})
+    """Basic health check endpoint (no auth required)"""
+    return jsonify({
+        "status": "healthy", 
+        "service": "delphos-works document generator",
+        "version": "1.0",
+        "endpoints": [
+            "POST /api/upload-template",
+            "GET /api/list-templates", 
+            "POST /api/generate",
+            "GET /api/download"
+        ]
+    })
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8080)
